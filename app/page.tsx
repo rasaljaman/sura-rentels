@@ -64,6 +64,7 @@ export default function Home() {
               alt="Car rental illustration"
               width={520}
               height={420}
+              sizes="(max-width: 1024px) 100vw, 520px"
               className="relative z-10 w-full"
               priority
             />

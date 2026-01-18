@@ -24,7 +24,13 @@ export const CarCard = ({
 }: CarCardProps) => (
   <Card className="flex h-full flex-col gap-4">
     <div className="relative h-40 w-full overflow-hidden rounded-2xl bg-slate-100">
-      <Image src={image} alt={title} fill className="object-cover" />
+      <Image
+        src={image}
+        alt={title}
+        fill
+        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 320px"
+        className="object-cover"
+      />
     </div>
     <div className="flex flex-1 flex-col gap-3">
       <div>
