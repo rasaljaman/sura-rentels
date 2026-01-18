@@ -20,6 +20,10 @@ export default function NewCarPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [images, setImages] = useState<FileList | null>(null);
   const [rcDocument, setRcDocument] = useState<File | null>(null);
+  const maxFileSize = 5 * 1024 * 1024;
+
+  const sanitizeFileName = (name: string) =>
+    name.replace(/[^a-zA-Z0-9_-]/g, "_");
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -28,6 +32,33 @@ export default function NewCarPage() {
       notify({
         title: "Missing Supabase config",
         description: "Add Supabase environment variables to enable uploads.",
+        variant: "error",
+      });
+      return;
+    }
+
+    const imageFiles = images ? Array.from(images) : [];
+    if (
+      imageFiles.some(
+        (file) => !file.type.startsWith("image/") || file.size > maxFileSize,
+      )
+    ) {
+      notify({
+        title: "Invalid image files",
+        description: "Images must be under 5MB and in a supported format.",
+        variant: "error",
+      });
+      return;
+    }
+
+    if (
+      rcDocument &&
+      (!["application/pdf", "image/jpeg", "image/png"].includes(rcDocument.type) ||
+        rcDocument.size > maxFileSize)
+    ) {
+      notify({
+        title: "Invalid RC document",
+        description: "Upload a PDF or image under 5MB.",
         variant: "error",
       });
       return;
@@ -75,24 +106,34 @@ export default function NewCarPage() {
       return;
     }
 
-    if (images?.length) {
-      const uploads = Array.from(images).map(async (file, index) => {
-        const path = `cars/${userData.user?.id}/${Date.now()}-${file.name}`;
+    if (imageFiles.length) {
+      const uploads = imageFiles.map(async (file, index) => {
+        const safeName = sanitizeFileName(file.name);
+        const path = `cars/${userData.user?.id}/${Date.now()}-${safeName}`;
         const { data, error } = await supabase.storage
           .from("car-images")
           .upload(path, file, { upsert: false });
         if (error || !data) return null;
-        return supabase.from("car_images").insert({
+        const { error: insertError } = await supabase.from("car_images").insert({
           car_id: car.id,
           image_url: data.path,
           is_primary: index === 0,
         });
+        return insertError;
       });
-      await Promise.all(uploads);
+      const results = await Promise.all(uploads);
+      if (results.some((item) => item)) {
+        notify({
+          title: "Image upload issue",
+          description: "Some images failed to attach to your listing.",
+          variant: "error",
+        });
+      }
     }
 
     if (rcDocument) {
-      const path = `car-documents/${userData.user.id}/${Date.now()}-${rcDocument.name}`;
+      const safeName = sanitizeFileName(rcDocument.name);
+      const path = `car-documents/${userData.user.id}/${Date.now()}-${safeName}`;
       const { data } = await supabase.storage
         .from("car-documents")
         .upload(path, rcDocument, { upsert: false });

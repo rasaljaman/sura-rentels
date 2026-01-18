@@ -36,6 +36,12 @@ export default function SignupPage() {
   }, []);
   const { notify } = useToast();
   const [step, setStep] = useState(1);
+  const [humanCheck, setHumanCheck] = useState(() => {
+    const first = Math.floor(Math.random() * 6) + 3;
+    const second = Math.floor(Math.random() * 6) + 2;
+    return { first, second, answer: String(first + second) };
+  });
+  const phoneRegex = /^\+?[0-9]{7,15}$/;
   const [state, setState] = useState<SignupState>({
     fullName: "",
     location: "Colombo",
@@ -55,6 +61,14 @@ export default function SignupPage() {
 
   const handleNext = async () => {
     if (step === 1) {
+      if (!phoneRegex.test(state.phone.trim())) {
+        notify({
+          title: "Invalid phone number",
+          description: "Use an international format like +94771234567.",
+          variant: "error",
+        });
+        return;
+      }
       if (state.password !== state.confirmPassword) {
         notify({
           title: "Passwords do not match",
@@ -67,11 +81,17 @@ export default function SignupPage() {
       return;
     }
 
-    if (state.humanAnswer.trim() !== "9") {
+    if (state.humanAnswer.trim() !== humanCheck.answer) {
       notify({
         title: "Human check failed",
         description: "Please answer the verification question correctly.",
         variant: "error",
+      });
+      setState((prev) => ({ ...prev, humanAnswer: "" }));
+      setHumanCheck(() => {
+        const first = Math.floor(Math.random() * 6) + 3;
+        const second = Math.floor(Math.random() * 6) + 2;
+        return { first, second, answer: String(first + second) };
       });
       return;
     }
@@ -149,16 +169,23 @@ export default function SignupPage() {
     const emailResult = await supabase.auth.signInWithOtp({
       email: state.email,
     });
+    if (emailResult.error) {
+      notify({
+        title: "Unable to send OTP",
+        description: emailResult.error.message,
+        variant: "error",
+      });
+      setIsLoading(false);
+      return;
+    }
     const phoneResult = await supabase.auth.signInWithOtp({
       phone: state.phone,
     });
 
-    if (emailResult.error || phoneResult.error) {
+    if (phoneResult.error) {
       notify({
         title: "Unable to send OTP",
-        description:
-          emailResult.error?.message || phoneResult.error?.message ||
-          "Please check your contact details.",
+        description: phoneResult.error.message,
         variant: "error",
       });
     } else {
@@ -196,19 +223,26 @@ export default function SignupPage() {
       token: emailOtp,
       type: "email",
     });
+    if (emailVerification.error) {
+      notify({
+        title: "Verification failed",
+        description: emailVerification.error.message,
+        variant: "error",
+      });
+      setIsLoading(false);
+      return;
+    }
+
     const phoneVerification = await supabase.auth.verifyOtp({
       phone: state.phone,
       token: phoneOtp,
       type: "sms",
     });
 
-    if (emailVerification.error || phoneVerification.error) {
+    if (phoneVerification.error) {
       notify({
         title: "Verification failed",
-        description:
-          emailVerification.error?.message ||
-          phoneVerification.error?.message ||
-          "Please re-check the OTP codes.",
+        description: phoneVerification.error.message,
         variant: "error",
       });
     } else {
@@ -332,7 +366,7 @@ export default function SignupPage() {
             </div>
             <div className="space-y-2">
               <label className="text-xs font-semibold uppercase text-slate-500">
-                What is 4 + 5?
+                What is {humanCheck.first} + {humanCheck.second}?
               </label>
               <Input
                 value={state.humanAnswer}

@@ -17,6 +17,10 @@ export default function VerificationPage() {
   const [license, setLicense] = useState<File | null>(null);
   const [photo, setPhoto] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const maxFileSize = 5 * 1024 * 1024;
+
+  const sanitizeFileName = (name: string) =>
+    name.replace(/[^a-zA-Z0-9_-]/g, "_");
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -39,6 +43,31 @@ export default function VerificationPage() {
       return;
     }
 
+    if (
+      license &&
+      (!["application/pdf", "image/jpeg", "image/png"].includes(license.type) ||
+        license.size > maxFileSize)
+    ) {
+      notify({
+        title: "Invalid license file",
+        description: "Upload a PDF or image under 5MB.",
+        variant: "error",
+      });
+      return;
+    }
+
+    if (
+      photo &&
+      (!photo.type.startsWith("image/") || photo.size > maxFileSize)
+    ) {
+      notify({
+        title: "Invalid profile photo",
+        description: "Profile photos must be images under 5MB.",
+        variant: "error",
+      });
+      return;
+    }
+
     setIsLoading(true);
     const supabase = createSupabaseBrowserClient();
     const { data: userData } = await supabase.auth.getUser();
@@ -54,32 +83,48 @@ export default function VerificationPage() {
     }
 
     if (license) {
-      const licensePath = `verifications/${userData.user.id}/${Date.now()}-${license.name}`;
-      const { data } = await supabase.storage
+      const safeName = sanitizeFileName(license.name);
+      const licensePath = `verifications/${userData.user.id}/${Date.now()}-${safeName}`;
+      const { data, error } = await supabase.storage
         .from("verification-documents")
         .upload(licensePath, license, { upsert: false });
-      if (data) {
-        await supabase.from("verifications").insert({
-          user_id: userData.user.id,
-          type: "driving_license",
-          document_url: data.path,
-          status: "pending",
+      if (error || !data) {
+        notify({
+          title: "Upload failed",
+          description: "We could not upload your driving license.",
+          variant: "error",
         });
+        setIsLoading(false);
+        return;
       }
+      await supabase.from("verifications").insert({
+        user_id: userData.user.id,
+        type: "driving_license",
+        document_url: data.path,
+        status: "pending",
+      });
     }
     if (photo) {
-      const photoPath = `verifications/${userData.user.id}/${Date.now()}-${photo.name}`;
-      const { data } = await supabase.storage
+      const safeName = sanitizeFileName(photo.name);
+      const photoPath = `verifications/${userData.user.id}/${Date.now()}-${safeName}`;
+      const { data, error } = await supabase.storage
         .from("verification-documents")
         .upload(photoPath, photo, { upsert: false });
-      if (data) {
-        await supabase.from("verifications").insert({
-          user_id: userData.user.id,
-          type: "profile_photo",
-          document_url: data.path,
-          status: "pending",
+      if (error || !data) {
+        notify({
+          title: "Upload failed",
+          description: "We could not upload your profile photo.",
+          variant: "error",
         });
+        setIsLoading(false);
+        return;
       }
+      await supabase.from("verifications").insert({
+        user_id: userData.user.id,
+        type: "profile_photo",
+        document_url: data.path,
+        status: "pending",
+      });
     }
 
     notify({

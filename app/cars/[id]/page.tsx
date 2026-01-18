@@ -29,6 +29,9 @@ export default function CarDetailsPage() {
   const [verificationStatus, setVerificationStatus] =
     useState<VerificationStatus>("unverified");
   const [bookingStatus, setBookingStatus] = useState("pending");
+  const [isBooking, setIsBooking] = useState(false);
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -66,7 +69,7 @@ export default function CarDetailsPage() {
     );
   }
 
-  const handleBooking = () => {
+  const handleBooking = async () => {
     if (verificationStatus !== "verified") {
       notify({
         title: "Verification required",
@@ -76,12 +79,78 @@ export default function CarDetailsPage() {
       });
       return;
     }
-    notify({
-      title: "Booking request sent",
-      description: "The host will respond within 24 hours.",
-      variant: "success",
+    if (!hasSupabaseEnv) {
+      notify({
+        title: "Supabase not configured",
+        description: "Add environment variables to submit bookings.",
+        variant: "error",
+      });
+      return;
+    }
+    if (!startDate || !endDate) {
+      notify({
+        title: "Select dates",
+        description: "Choose pickup and return dates before booking.",
+        variant: "error",
+      });
+      return;
+    }
+    if (startDate > endDate) {
+      notify({
+        title: "Invalid dates",
+        description: "Return date must be after the pickup date.",
+        variant: "error",
+      });
+      return;
+    }
+    setIsBooking(true);
+    const supabase = createSupabaseBrowserClient();
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      notify({
+        title: "Login required",
+        description: "Please log in to request a booking.",
+        variant: "error",
+      });
+      setIsBooking(false);
+      return;
+    }
+    const { data: carRecord, error: carError } = await supabase
+      .from("cars")
+      .select("id")
+      .eq("id", car.id)
+      .maybeSingle();
+    if (carError || !carRecord) {
+      notify({
+        title: "Listing unavailable",
+        description: "This car is no longer accepting bookings.",
+        variant: "error",
+      });
+      setIsBooking(false);
+      return;
+    }
+    const { error } = await supabase.from("bookings").insert({
+      car_id: car.id,
+      renter_id: userData.user.id,
+      start_date: startDate,
+      end_date: endDate,
+      status: "pending",
     });
-    setBookingStatus("pending");
+    if (error) {
+      notify({
+        title: "Booking failed",
+        description: error.message,
+        variant: "error",
+      });
+    } else {
+      notify({
+        title: "Booking request sent",
+        description: "The host will respond within 24 hours.",
+        variant: "success",
+      });
+      setBookingStatus("pending");
+    }
+    setIsBooking(false);
   };
 
   return (
@@ -144,14 +213,24 @@ export default function CarDetailsPage() {
               </p>
             </div>
             <div className="grid gap-3">
-              <Input type="date" />
-              <Input type="date" />
+              <Input
+                type="date"
+                value={startDate}
+                onChange={(event) => setStartDate(event.target.value)}
+              />
+              <Input
+                type="date"
+                value={endDate}
+                onChange={(event) => setEndDate(event.target.value)}
+              />
               <Select defaultValue="pickup">
                 <option value="pickup">Pickup</option>
                 <option value="delivery">Doorstep delivery</option>
               </Select>
             </div>
-            <Button onClick={handleBooking}>Request booking</Button>
+            <Button onClick={handleBooking} disabled={isBooking}>
+              {isBooking ? "Sending..." : "Request booking"}
+            </Button>
             {verificationStatus !== "verified" ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                 Verification status: {verificationStatus}. Upload your license in

@@ -77,7 +77,9 @@ create table if not exists public.reviews (
 create or replace function public.set_updated_at()
 returns trigger as $$
 begin
-  new.updated_at = now();
+  if new.updated_at = old.updated_at then
+    new.updated_at = now();
+  end if;
   return new;
 end;
 $$ language plpgsql;
@@ -139,7 +141,15 @@ create policy "Users can update their own profile"
   on public.profiles for update
   to authenticated
   using (auth.uid() = id)
-  with check (auth.uid() = id);
+  with check (
+    auth.uid() = id
+    and exists (
+      select 1 from public.profiles as p
+      where p.id = auth.uid()
+        and p.role = role
+        and p.verification_status = verification_status
+    )
+  );
 
 create policy "Admins can manage profiles"
   on public.profiles for all
